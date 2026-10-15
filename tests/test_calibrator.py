@@ -4,6 +4,7 @@ import socket
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -394,17 +395,22 @@ class Tests(unittest.TestCase):
             def __init__(self): self.sent = []
             def sendall(self, data): self.sent.append(data)
         sock = CaptureSocket()
-        backend._process_commands(sock)
+        # Simulate coarse monotonic-clock resolution (seen on Windows):
+        # sending a verification request can have the same timestamp as SET.
+        with patch.object(app.time, 'monotonic', return_value=now):
+            backend._process_commands(sock)
         self.assertEqual(len(sock.sent), 1, 'A fresh PGN 61184 READ must follow the echo')
         read = wire.parse_line(sock.sent[0].decode().strip())
         self.assertEqual(read.pgn, wire.P_CMD)
         self.assertEqual(read.payload, wire.direct_message(0))
         sent_at = backend.devices[3].pending_verify_sent_at
-        self.assertGreater(sent_at, now)
+        self.assertEqual(sent_at, now)
         backend._handle_message(echo(10, sent_at - 0.001))
         self.assertAlmostEqual(backend.devices[3].offset, 9.0012)
         self.assertIsNotNone(backend.devices[3].pending_set_raw)
-        backend._handle_message(echo(10, time.monotonic()))
+        # Synthetic receive times must be on either side of the send marker;
+        # never rely on the test machine's real clock advancing between calls.
+        backend._handle_message(echo(10, sent_at + 0.001))
         self.assertAlmostEqual(backend.devices[3].offset, 10, places=2)
         self.assertIsNone(backend.devices[3].pending_set_raw)
         self.assertIn('READBACK VERIFIED', backend.status)
