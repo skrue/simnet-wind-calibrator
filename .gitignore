@@ -1,0 +1,12 @@
+.venv/
+logs/
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+*.log
+*.log.*
+*.rx.bin
+*.pcap
+*.pcapng
+.env
